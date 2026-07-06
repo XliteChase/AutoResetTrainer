@@ -1,5 +1,5 @@
 const CHAMPIONS = [
-  { id: 'master-yi', name: 'Master Yi', ability: 'Wuju Style', key: 'E', autoMs: 650, resetWindowMs: 240, color: '#f6d365', accent: '#9ef7ff', hint: 'Auto attack, then press E right as the sword spark lands to instantly start the next swing.' },
+  { id: 'master-yi', name: 'Master Yi', ability: 'Meditate reset', key: 'W', autoMs: 650, resetWindowMs: 240, color: '#f6d365', accent: '#9ef7ff', hint: 'Auto attack, then tap W/Meditate right as the sword spark lands to cancel downtime and restart your swing.' },
   { id: 'nasus', name: 'Nasus', ability: 'Siphoning Strike', key: 'Q', autoMs: 720, resetWindowMs: 260, color: '#b48cff', accent: '#ffe8a3', hint: 'Use Q immediately after the hit confirms to cancel downtime and chain the empowered attack.' },
   { id: 'jax', name: 'Jax', ability: 'Empower', key: 'W', autoMs: 690, resetWindowMs: 250, color: '#c084fc', accent: '#7dd3fc', hint: 'Strike first, then W during the reset timing window to keep pressure without wasted backswing.' },
   { id: 'renekton', name: 'Renekton', ability: 'Ruthless Predator', key: 'W', autoMs: 710, resetWindowMs: 250, color: '#fb923c', accent: '#fde68a', hint: 'Click the dummy, wait for impact, and buffer W just after damage appears.' },
@@ -146,3 +146,81 @@ window.addEventListener('keydown', (event) => {
 });
 
 render();
+
+const canvas = $('gameCanvas');
+const ctx = canvas.getContext('2d');
+const world = {
+  minions: Array.from({ length: 8 }, (_, index) => ({ lane: index % 2, offset: index * 95, bob: Math.random() * Math.PI * 2 })),
+  particles: Array.from({ length: 36 }, () => ({ x: Math.random(), y: Math.random(), size: 1 + Math.random() * 2, speed: 0.15 + Math.random() * 0.45 })),
+};
+
+function sizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+  canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+}
+
+function drawGame(time = 0) {
+  const { width, height } = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, width, height);
+
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, '#143b46');
+  gradient.addColorStop(0.42, '#1f3c2f');
+  gradient.addColorStop(1, '#172554');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate(-0.18);
+  ctx.fillStyle = 'rgba(88, 166, 114, 0.32)';
+  ctx.fillRect(-width, -56, width * 2, 112);
+  ctx.strokeStyle = 'rgba(234, 221, 173, 0.52)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([24, 18]);
+  ctx.beginPath();
+  ctx.moveTo(-width, 0);
+  ctx.lineTo(width, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(18, 83, 70, 0.38)';
+  for (let i = 0; i < 14; i += 1) {
+    const x = ((i * 137 + time * 0.012) % (width + 160)) - 80;
+    const y = 54 + (i % 4) * (height / 4.8);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 46, 19, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  world.minions.forEach((minion, index) => {
+    const direction = minion.lane ? -1 : 1;
+    const x = minion.lane ? width - ((time * 0.035 + minion.offset) % (width + 120)) : ((time * 0.035 + minion.offset) % (width + 120)) - 60;
+    const y = height * 0.52 + (index % 4 - 1.5) * 20 + Math.sin(time * 0.006 + minion.bob) * 5;
+    ctx.fillStyle = minion.lane ? 'rgba(248, 113, 113, 0.88)' : 'rgba(96, 165, 250, 0.88)';
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.72)';
+    ctx.fillRect(x - 9 * direction, y - 3, 18 * direction, 6);
+  });
+
+  world.particles.forEach((particle) => {
+    particle.y += particle.speed / 1000;
+    if (particle.y > 1) particle.y = 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
+    ctx.beginPath();
+    ctx.arc(particle.x * width, particle.y * height, particle.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  requestAnimationFrame(drawGame);
+}
+
+window.addEventListener('resize', sizeCanvas);
+sizeCanvas();
+drawGame();

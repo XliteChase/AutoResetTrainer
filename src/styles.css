@@ -51,6 +51,7 @@ h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
 .key-hint { display: flex; align-items: center; gap: 8px; color: #c2d2e8; flex-wrap: wrap; }
 .arena { position: relative; min-height: 560px; border-radius: 24px; overflow: hidden; cursor: crosshair; background: linear-gradient(180deg, rgb(23 37 84 / 0.9), rgb(15 23 42 / 0.95)); border: 1px solid rgb(255 255 255 / 0.12); }
 .arena.primed { box-shadow: inset 0 0 0 3px var(--accent), 0 0 44px color-mix(in srgb, var(--accent) 45%, transparent); }
+.game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; filter: saturate(1.18) contrast(1.08); }
 .lane-lines { position: absolute; inset: -20%; background-image: linear-gradient(115deg, transparent 0 46%, rgb(255 255 255 / 0.08) 46% 47%, transparent 47% 100%); background-size: 90px 90px; transform: rotate(-8deg); opacity: 0.45; }
 .champion-avatar { position: absolute; left: 12%; top: 46%; translate: 0 -50%; width: 160px; height: 160px; display: grid; place-items: center; border-radius: 50%; color: #07111f; background: radial-gradient(circle, #fff, var(--champion)); box-shadow: 0 0 60px color-mix(in srgb, var(--champion) 65%, transparent); transition: transform 180ms ease; }
 .champion-avatar span { position: absolute; bottom: -30px; color: #fff; font-weight: 900; text-shadow: 0 2px 8px #000; }
