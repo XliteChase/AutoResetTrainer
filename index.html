@@ -35,13 +35,17 @@
             </ol>
             <p id="championHint"></p>
           </div>
+          <div class="mode-toggle" role="group" aria-label="Training mode">
+            <button class="mode-button active" data-mode="reset">Reset trainer</button>
+            <button class="mode-button" data-mode="jungle">Jungle clear</button>
+          </div>
           <button class="reset-button" id="resetButton">↻ Reset session</button>
         </aside>
 
         <section class="arena-wrap glass">
           <div class="hud">
             <div class="status ready" id="status">Ready</div>
-            <div class="key-hint">🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">W</kbd> reset</div>
+            <div class="key-hint" id="keyHint">🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">W</kbd> reset</div>
           </div>
 
           <div class="arena" id="arena">
@@ -59,6 +63,7 @@
               <small id="damageText">0 damage dealt</small>
             </button>
             <div class="attack-move-ring hidden" id="attackMoveRing">Attack move primed — click to fire</div>
+            <div class="jungle-overlay hidden" id="jungleOverlay">Right click to move · A-click monsters · W reset · Q Alpha Strike · E Wuju · D Smite</div>
           </div>
 
           <div class="timing-bar">

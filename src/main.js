@@ -10,7 +10,7 @@ const RESULTS = {
 };
 
 const $ = (id) => document.getElementById(id);
-const state = { champion: CHAMPIONS[0], phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, timers: [], activeAttempt: false, impactAt: 0, resetOpenAt: 0, resetCloseAt: 0 };
+const state = { mode: 'reset', champion: CHAMPIONS[0], phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, timers: [], activeAttempt: false, impactAt: 0, resetOpenAt: 0, resetCloseAt: 0 };
 
 function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
 function formatMs(value) { return value === null || Number.isNaN(value) ? '—' : `${Math.round(value)} ms`; }
@@ -29,7 +29,7 @@ function render() {
   document.documentElement.style.setProperty('--accent', state.champion.accent);
   renderChampionButtons();
   $('resetKeyInline').textContent = state.champion.key;
-  $('resetKeyHud').textContent = state.champion.key;
+  if ($('resetKeyHud')) $('resetKeyHud').textContent = state.champion.key;
   $('championHint').textContent = state.champion.hint;
   $('avatarName').textContent = state.champion.name;
   $('resetWindowLabel').textContent = `Reset window: ${state.champion.resetWindowMs} ms`;
@@ -60,11 +60,30 @@ function setResult(result) {
   $('status').className = `status ${className}`;
 }
 
+const audio = { ctx: null };
+function playTone(kind = 'hit') {
+  audio.ctx ||= new AudioContext();
+  const now = audio.ctx.currentTime;
+  const osc = audio.ctx.createOscillator();
+  const gain = audio.ctx.createGain();
+  const frequencies = { hit: 230, perfect: 520, early: 130, spell: 740 };
+  osc.type = kind === 'spell' ? 'sawtooth' : 'triangle';
+  osc.frequency.setValueAtTime(frequencies[kind] || 260, now);
+  osc.frequency.exponentialRampToValueAtTime((frequencies[kind] || 260) * 0.55, now + 0.16);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.09, now + 0.015);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+  osc.connect(gain).connect(audio.ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.19);
+}
+
 function burst(kind) {
   const spark = document.createElement('div');
   spark.className = `spark ${kind}`;
   spark.textContent = '⚡';
   $('arena').append(spark);
+  playTone(kind);
   schedule(() => spark.remove(), 900);
 }
 
@@ -119,6 +138,7 @@ function triggerReset() {
 function resetStats() {
   clearTimers();
   Object.assign(state, { phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, activeAttempt: false });
+  if (typeof resetJungle === 'function') resetJungle();
   document.querySelectorAll('.spark').forEach((spark) => spark.remove());
   setPhase('idle');
   setResult('idle');
@@ -126,6 +146,7 @@ function resetStats() {
 }
 
 $('arena').addEventListener('click', (event) => {
+  if (state.mode !== 'reset') return;
   if (event.target.closest('[data-dummy]') || state.attackMovePrimed) beginAttack();
 });
 
@@ -162,7 +183,11 @@ function sizeCanvas() {
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 }
 
+let lastFrame = performance.now();
 function drawGame(time = 0) {
+  const dt = Math.min(0.05, (time - lastFrame) / 1000 || 0);
+  lastFrame = time;
+  updateJungle(dt);
   const { width, height } = canvas.getBoundingClientRect();
   ctx.clearRect(0, 0, width, height);
 
@@ -209,6 +234,8 @@ function drawGame(time = 0) {
     ctx.fillRect(x - 9 * direction, y - 3, 18 * direction, 6);
   });
 
+  if (state.mode === 'jungle') drawJungleActors(width, height);
+
   world.particles.forEach((particle) => {
     particle.y += particle.speed / 1000;
     if (particle.y > 1) particle.y = 0;
@@ -221,6 +248,209 @@ function drawGame(time = 0) {
   requestAnimationFrame(drawGame);
 }
 
+function drawJungleActors(width, height) {
+  const scaleX = width / 960;
+  const scaleY = height / 560;
+  ctx.save();
+  ctx.scale(scaleX, scaleY);
+  jungle.camps.forEach((camp) => {
+    if (camp.hp <= 0) return;
+    ctx.fillStyle = camp.color;
+    ctx.strokeStyle = jungle.selectedCamp === camp ? '#fef08a' : 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(camp.x, camp.y, camp.id === 'blue' || camp.id === 'red' ? 34 : 27, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(camp.x - 44, camp.y - 52, 88, 9);
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(camp.x - 44, camp.y - 52, 88 * (camp.hp / camp.maxHp), 9);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 12px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(camp.name, camp.x, camp.y + 55);
+  });
+  ctx.strokeStyle = 'rgba(158,247,255,0.42)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y);
+  ctx.lineTo(player.tx, player.ty);
+  ctx.stroke();
+  ctx.fillStyle = '#f6d365';
+  ctx.strokeStyle = '#9ef7ff';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 24, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#111827';
+  ctx.font = '900 22px system-ui';
+  ctx.fillText('Yi', player.x, player.y + 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(player.x - 44, player.y - 44, 88, 8);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(player.x - 44, player.y - 44, 88 * (player.hp / player.maxHp), 8);
+  ctx.restore();
+}
+
 window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
 drawGame();
+
+const player = { x: 190, y: 310, tx: 190, ty: 310, hp: 760, maxHp: 760, attackCooldown: 0, qCooldown: 0, wCooldown: 0, eTimer: 0, smiteCooldown: 0 };
+const jungle = {
+  modeStarted: performance.now(), selectedCamp: null,
+  camps: [
+    { id: 'blue', name: 'Blue Sentinel', x: 650, y: 170, hp: 2300, maxHp: 2300, damage: 58, respawn: 300, color: '#60a5fa' },
+    { id: 'gromp', name: 'Gromp', x: 825, y: 300, hp: 2050, maxHp: 2050, damage: 70, respawn: 135, color: '#34d399' },
+    { id: 'wolves', name: 'Murk Wolves', x: 565, y: 360, hp: 1650, maxHp: 1650, damage: 42, respawn: 135, color: '#94a3b8' },
+    { id: 'raptors', name: 'Raptors', x: 360, y: 270, hp: 1400, maxHp: 1400, damage: 38, respawn: 135, color: '#f97316' },
+    { id: 'red', name: 'Red Brambleback', x: 250, y: 440, hp: 2300, maxHp: 2300, damage: 60, respawn: 300, color: '#ef4444' },
+    { id: 'krugs', name: 'Krugs', x: 135, y: 215, hp: 1900, maxHp: 1900, damage: 55, respawn: 135, color: '#a16207' },
+  ],
+};
+
+function setMode(mode) {
+  state.mode = mode;
+  document.body.classList.toggle('jungle-mode', mode === 'jungle');
+  document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
+  $('jungleOverlay').classList.toggle('hidden', mode !== 'jungle');
+  $('keyHint').innerHTML = mode === 'jungle'
+    ? '🧭 Right click move · <kbd>A</kbd> + click camps · <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd>/<kbd>D</kbd> clear'
+    : `🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">${state.champion.key}</kbd> reset`;
+}
+
+document.addEventListener('click', (event) => {
+  const modeButton = event.target.closest('[data-mode]');
+  if (!modeButton) return;
+  setMode(modeButton.dataset.mode);
+});
+
+$('arena').addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  player.tx = event.clientX - rect.left;
+  player.ty = event.clientY - rect.top;
+});
+
+function campAtPoint(x, y) {
+  return jungle.camps.find((camp) => camp.hp > 0 && Math.hypot(camp.x - x, camp.y - y) < 42);
+}
+
+$('arena').addEventListener('pointerdown', (event) => {
+  if (state.mode !== 'jungle') return;
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const camp = campAtPoint(x, y);
+  if (camp) {
+    jungle.selectedCamp = camp;
+    player.tx = camp.x - 58;
+    player.ty = camp.y;
+  } else if (state.attackMovePrimed) {
+    jungle.selectedCamp = nearestCamp(x, y);
+    player.tx = x;
+    player.ty = y;
+  }
+  state.attackMovePrimed = false;
+  render();
+});
+
+function nearestCamp(x = player.x, y = player.y) {
+  return jungle.camps.filter((camp) => camp.hp > 0).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] || null;
+}
+
+function damageCamp(camp, amount, label = 'hit') {
+  if (!camp || camp.hp <= 0) return;
+  camp.hp = Math.max(0, camp.hp - amount);
+  state.damage += amount;
+  if (camp.hp === 0) {
+    state.perfects += 1;
+    state.streak += 1;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    camp.deadAt = performance.now();
+    jungle.selectedCamp = nearestCamp();
+  }
+  burst(label);
+  render();
+}
+
+function castJungleSpell(key) {
+  const camp = jungle.selectedCamp || nearestCamp();
+  const inRange = camp && Math.hypot(camp.x - player.x, camp.y - player.y) < 120;
+  if (key === 'q' && camp && player.qCooldown <= 0) {
+    player.x = camp.x - 44;
+    player.y = camp.y;
+    player.tx = player.x;
+    player.ty = player.y;
+    player.qCooldown = 4.2;
+    playTone('spell');
+    damageCamp(camp, 310, 'perfect');
+  }
+  if (key === 'w' && player.wCooldown <= 0) {
+    playTone('spell');
+    player.wCooldown = 7;
+    player.hp = Math.min(player.maxHp, player.hp + 95);
+    player.attackCooldown = 0;
+    setResult('perfect');
+  }
+  if (key === 'e') { playTone('spell'); player.eTimer = 5; }
+  if (key === 'd' && inRange && player.smiteCooldown <= 0) {
+    playTone('spell');
+    player.smiteCooldown = 15;
+    damageCamp(camp, 600, 'perfect');
+  }
+}
+
+window.addEventListener('keydown', (event) => {
+  if (state.mode !== 'jungle') return;
+  const key = event.key.toLowerCase();
+  if (['q', 'w', 'e', 'd'].includes(key)) {
+    event.preventDefault();
+    castJungleSpell(key);
+  }
+});
+
+function updateJungle(dt) {
+  if (state.mode !== 'jungle') return;
+  const dx = player.tx - player.x;
+  const dy = player.ty - player.y;
+  const dist = Math.hypot(dx, dy);
+  const speed = player.eTimer > 0 ? 265 : 230;
+  if (dist > 3) {
+    const step = Math.min(dist, speed * dt);
+    player.x += (dx / dist) * step;
+    player.y += (dy / dist) * step;
+  }
+  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
+  player.qCooldown = Math.max(0, player.qCooldown - dt);
+  player.wCooldown = Math.max(0, player.wCooldown - dt);
+  player.smiteCooldown = Math.max(0, player.smiteCooldown - dt);
+  player.eTimer = Math.max(0, player.eTimer - dt);
+
+  const camp = jungle.selectedCamp || nearestCamp();
+  if (camp && camp.hp > 0 && Math.hypot(camp.x - player.x, camp.y - player.y) < 86 && player.attackCooldown <= 0) {
+    player.attackCooldown = player.eTimer > 0 ? 0.48 : 0.68;
+    damageCamp(camp, player.eTimer > 0 ? 145 : 105, 'hit');
+    player.hp = Math.max(0, player.hp - camp.damage * 0.18);
+  }
+  jungle.camps.forEach((camp) => {
+    if (camp.hp === 0 && performance.now() - camp.deadAt > camp.respawn * 1000) camp.hp = camp.maxHp;
+  });
+}
+
+function resetJungle() {
+  player.x = 190;
+  player.y = 310;
+  player.tx = 190;
+  player.ty = 310;
+  player.hp = player.maxHp;
+  player.attackCooldown = 0;
+  player.qCooldown = 0;
+  player.wCooldown = 0;
+  player.eTimer = 0;
+  player.smiteCooldown = 0;
+  jungle.selectedCamp = null;
+  jungle.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.deadAt = 0; });
+}
