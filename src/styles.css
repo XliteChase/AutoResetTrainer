@@ -92,3 +92,4 @@ h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
 .hidden { display: none; }
 .jungle-mode .champion-avatar, .jungle-mode .dummy { opacity: 0; pointer-events: none; }
 .jungle-mode .arena { cursor: pointer; }
+.riot-notice { width: min(1480px, 100%); margin: 18px auto 0; color: #93a4bc; font-size: 0.78rem; text-align: center; }

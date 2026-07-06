@@ -9,6 +9,50 @@ const RESULTS = {
   idle: ['Ready', 'ready'], early: ['Too Early', 'early'], perfect: ['Perfect Reset', 'perfect'], late: ['Too Late', 'late'], missed: ['Missed Reset', 'missed'],
 };
 
+const RIOT_ASSET_BASE = 'https://ddragon.leagueoflegends.com/cdn/15.24.1/img';
+const CDRAGON_CHARACTER_BASE = 'https://raw.communitydragon.org/latest/game/assets/characters';
+const ASSET_URLS = {
+  yi: `${RIOT_ASSET_BASE}/champion/MasterYi.png`,
+  q: `${RIOT_ASSET_BASE}/spell/AlphaStrike.png`,
+  w: `${RIOT_ASSET_BASE}/spell/Meditate.png`,
+  e: `${RIOT_ASSET_BASE}/spell/WujuStyle.png`,
+  smite: `${RIOT_ASSET_BASE}/spell/SummonerSmite.png`,
+  blue: `${CDRAGON_CHARACTER_BASE}/sru_blue/hud/bluesentinel_square.png`,
+  gromp: `${CDRAGON_CHARACTER_BASE}/sru_gromp/hud/gromp_square.png`,
+  wolves: `${CDRAGON_CHARACTER_BASE}/sru_murkwolf/hud/murkwolf_square.png`,
+  raptors: `${CDRAGON_CHARACTER_BASE}/sru_razorbeak/hud/razorbeak_square.png`,
+  red: `${CDRAGON_CHARACTER_BASE}/sru_red/hud/redbrambleback_square.png`,
+  krugs: `${CDRAGON_CHARACTER_BASE}/sru_krug/hud/krug_square.png`,
+};
+const assets = Object.fromEntries(Object.entries(ASSET_URLS).map(([key, src]) => {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = src;
+  return [key, image];
+}));
+
+function drawAssetCircle(image, x, y, radius, fallbackColor, label) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.clip();
+  if (image?.complete && image.naturalWidth) {
+    ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
+  } else {
+    ctx.fillStyle = fallbackColor;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.fillStyle = '#fff';
+    ctx.font = `900 ${Math.max(11, radius * 0.42)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y + 4);
+  }
+  ctx.restore();
+}
+
+function physicalDamage(raw, armor) {
+  return Math.round(raw * (100 / (100 + Math.max(0, armor))));
+}
+
 const $ = (id) => document.getElementById(id);
 const state = { mode: 'reset', champion: CHAMPIONS[0], phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, timers: [], activeAttempt: false, impactAt: 0, resetOpenAt: 0, resetCloseAt: 0 };
 
@@ -255,13 +299,19 @@ function drawJungleActors(width, height) {
   ctx.scale(scaleX, scaleY);
   jungle.camps.forEach((camp) => {
     if (camp.hp <= 0) return;
-    ctx.fillStyle = camp.color;
     ctx.strokeStyle = jungle.selectedCamp === camp ? '#fef08a' : 'rgba(255,255,255,0.45)';
     ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(camp.x, camp.y, camp.id === 'blue' || camp.id === 'red' ? 34 : 27, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    const radius = camp.id === 'blue' || camp.id === 'red' ? 38 : 30;
+    const offsets = camp.units === 1 ? [[0, 0, radius]] : Array.from({ length: camp.units }, (_, index) => {
+      const angle = (index / camp.units) * Math.PI * 2;
+      return [Math.cos(angle) * 24, Math.sin(angle) * 18, index === 0 ? radius : radius * 0.62];
+    });
+    offsets.forEach(([ox, oy, unitRadius], index) => {
+      drawAssetCircle(assets[camp.id], camp.x + ox, camp.y + oy, unitRadius, camp.color, camp.name[0]);
+      ctx.beginPath();
+      ctx.arc(camp.x + ox, camp.y + oy, unitRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    });
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
     ctx.fillRect(camp.x - 44, camp.y - 52, 88, 9);
     ctx.fillStyle = '#22c55e';
@@ -277,16 +327,12 @@ function drawJungleActors(width, height) {
   ctx.moveTo(player.x, player.y);
   ctx.lineTo(player.tx, player.ty);
   ctx.stroke();
-  ctx.fillStyle = '#f6d365';
   ctx.strokeStyle = '#9ef7ff';
   ctx.lineWidth = 5;
+  drawAssetCircle(assets.yi, player.x, player.y, 28, '#f6d365', 'Yi');
   ctx.beginPath();
-  ctx.arc(player.x, player.y, 24, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.arc(player.x, player.y, 28, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#111827';
-  ctx.font = '900 22px system-ui';
-  ctx.fillText('Yi', player.x, player.y + 8);
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(player.x - 44, player.y - 44, 88, 8);
   ctx.fillStyle = '#22c55e';
@@ -298,16 +344,16 @@ window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
 drawGame();
 
-const player = { x: 190, y: 310, tx: 190, ty: 310, hp: 760, maxHp: 760, attackCooldown: 0, qCooldown: 0, wCooldown: 0, eTimer: 0, smiteCooldown: 0 };
+const player = { x: 190, y: 310, tx: 190, ty: 310, hp: 760, maxHp: 760, ad: 65, bonusTrueDamage: 0, attackCooldown: 0, qCooldown: 0, wCooldown: 0, eTimer: 0, smiteCooldown: 0 };
 const jungle = {
   modeStarted: performance.now(), selectedCamp: null,
   camps: [
-    { id: 'blue', name: 'Blue Sentinel', x: 650, y: 170, hp: 2300, maxHp: 2300, damage: 58, respawn: 300, color: '#60a5fa' },
-    { id: 'gromp', name: 'Gromp', x: 825, y: 300, hp: 2050, maxHp: 2050, damage: 70, respawn: 135, color: '#34d399' },
-    { id: 'wolves', name: 'Murk Wolves', x: 565, y: 360, hp: 1650, maxHp: 1650, damage: 42, respawn: 135, color: '#94a3b8' },
-    { id: 'raptors', name: 'Raptors', x: 360, y: 270, hp: 1400, maxHp: 1400, damage: 38, respawn: 135, color: '#f97316' },
-    { id: 'red', name: 'Red Brambleback', x: 250, y: 440, hp: 2300, maxHp: 2300, damage: 60, respawn: 300, color: '#ef4444' },
-    { id: 'krugs', name: 'Krugs', x: 135, y: 215, hp: 1900, maxHp: 1900, damage: 55, respawn: 135, color: '#a16207' },
+    { id: 'blue', name: 'Blue Sentinel', x: 650, y: 170, hp: 2300, maxHp: 2300, damage: 66, armor: 42, mr: 42, respawn: 300, color: '#60a5fa', units: 1 },
+    { id: 'gromp', name: 'Gromp', x: 825, y: 300, hp: 2050, maxHp: 2050, damage: 70, armor: 20, mr: 20, respawn: 135, color: '#34d399', units: 1 },
+    { id: 'wolves', name: 'Murk Wolves', x: 565, y: 360, hp: 1650, maxHp: 1650, damage: 42, armor: 20, mr: 20, respawn: 135, color: '#94a3b8', units: 3 },
+    { id: 'raptors', name: 'Raptors', x: 360, y: 270, hp: 1400, maxHp: 1400, damage: 38, armor: 20, mr: 20, respawn: 135, color: '#f97316', units: 6 },
+    { id: 'red', name: 'Red Brambleback', x: 250, y: 440, hp: 2300, maxHp: 2300, damage: 66, armor: 42, mr: 42, respawn: 300, color: '#ef4444', units: 1 },
+    { id: 'krugs', name: 'Krugs', x: 135, y: 215, hp: 1900, maxHp: 1900, damage: 55, armor: 20, mr: 20, respawn: 135, color: '#a16207', units: 2 },
   ],
 };
 
@@ -386,7 +432,7 @@ function castJungleSpell(key) {
     player.ty = player.y;
     player.qCooldown = 4.2;
     playTone('spell');
-    damageCamp(camp, 310, 'perfect');
+    damageCamp(camp, physicalDamage(155, camp.armor) + physicalDamage(player.ad, camp.armor), 'perfect');
   }
   if (key === 'w' && player.wCooldown <= 0) {
     playTone('spell');
@@ -395,7 +441,7 @@ function castJungleSpell(key) {
     player.attackCooldown = 0;
     setResult('perfect');
   }
-  if (key === 'e') { playTone('spell'); player.eTimer = 5; }
+  if (key === 'e') { playTone('spell'); player.eTimer = 5; player.bonusTrueDamage = 30; }
   if (key === 'd' && inRange && player.smiteCooldown <= 0) {
     playTone('spell');
     player.smiteCooldown = 15;
@@ -428,11 +474,12 @@ function updateJungle(dt) {
   player.wCooldown = Math.max(0, player.wCooldown - dt);
   player.smiteCooldown = Math.max(0, player.smiteCooldown - dt);
   player.eTimer = Math.max(0, player.eTimer - dt);
+  if (player.eTimer === 0) player.bonusTrueDamage = 0;
 
   const camp = jungle.selectedCamp || nearestCamp();
   if (camp && camp.hp > 0 && Math.hypot(camp.x - player.x, camp.y - player.y) < 86 && player.attackCooldown <= 0) {
     player.attackCooldown = player.eTimer > 0 ? 0.48 : 0.68;
-    damageCamp(camp, player.eTimer > 0 ? 145 : 105, 'hit');
+    damageCamp(camp, physicalDamage(player.ad, camp.armor) + (player.eTimer > 0 ? player.bonusTrueDamage : 0), 'hit');
     player.hp = Math.max(0, player.hp - camp.damage * 0.18);
   }
   jungle.camps.forEach((camp) => {
@@ -450,6 +497,7 @@ function resetJungle() {
   player.qCooldown = 0;
   player.wCooldown = 0;
   player.eTimer = 0;
+  player.bonusTrueDamage = 0;
   player.smiteCooldown = 0;
   jungle.selectedCamp = null;
   jungle.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.deadAt = 0; });
