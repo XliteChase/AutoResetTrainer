@@ -93,3 +93,11 @@ h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 18px; }
 .jungle-mode .champion-avatar, .jungle-mode .dummy { opacity: 0; pointer-events: none; }
 .jungle-mode .arena { cursor: pointer; }
 .riot-notice { width: min(1480px, 100%); margin: 18px auto 0; color: #93a4bc; font-size: 0.78rem; text-align: center; }
+.ability-bar { position: absolute; left: 50%; bottom: 14px; translate: -50% 0; z-index: 8; display: grid; grid-template-columns: repeat(4, minmax(86px, 118px)); gap: 10px; padding: 10px; border: 1px solid rgb(255 255 255 / 0.18); border-radius: 18px; background: linear-gradient(180deg, rgb(2 6 23 / 0.88), rgb(15 23 42 / 0.78)); box-shadow: 0 18px 40px rgb(0 0 0 / 0.42); }
+.ability { position: relative; min-height: 92px; overflow: hidden; border: 1px solid rgb(255 255 255 / 0.16); border-radius: 14px; background: rgb(255 255 255 / 0.08); text-align: center; }
+.ability img { width: 100%; height: 54px; object-fit: cover; display: block; filter: saturate(1.18); }
+.ability b { position: absolute; left: 6px; top: 6px; border-radius: 7px; padding: 2px 6px; background: rgb(0 0 0 / 0.72); color: #fff; }
+.ability span { display: block; padding: 3px 4px 0; color: #dbeafe; font-size: 0.72rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ability em { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(to top, rgb(0 0 0 / 0.72) calc(var(--cooldown) * 100%), transparent calc(var(--cooldown) * 100%)); color: #fff; font-style: normal; font-weight: 950; text-shadow: 0 2px 6px #000; pointer-events: none; }
+.ability:not(.cooling) em { align-items: end; padding-bottom: 6px; background: transparent; color: #bbf7d0; font-size: 0.72rem; }
+.ability.active { outline: 2px solid #fef08a; box-shadow: 0 0 22px rgb(250 204 21 / 0.35); }

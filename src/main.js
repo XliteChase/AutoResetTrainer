@@ -49,6 +49,48 @@ function drawAssetCircle(image, x, y, radius, fallbackColor, label) {
   ctx.restore();
 }
 
+function drawAssetBillboard(image, x, y, width, height, fallbackColor, label) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.36)';
+  ctx.beginPath();
+  ctx.ellipse(0, height * 0.46, width * 0.55, height * 0.16, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const gradient = ctx.createLinearGradient(0, -height / 2, 0, height / 2);
+  gradient.addColorStop(0, 'rgba(255,255,255,0.28)');
+  gradient.addColorStop(0.18, fallbackColor);
+  gradient.addColorStop(1, 'rgba(0,0,0,0.72)');
+  ctx.fillStyle = gradient;
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 3;
+  roundRect(ctx, -width / 2, -height / 2, width, height, 13);
+  ctx.fill();
+  ctx.stroke();
+  if (image?.complete && image.naturalWidth) {
+    ctx.save();
+    roundRect(ctx, -width / 2 + 4, -height / 2 + 4, width - 8, height - 8, 10);
+    ctx.clip();
+    ctx.drawImage(image, -width / 2 + 4, -height / 2 + 4, width - 8, height - 8);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#fff';
+    ctx.font = `900 ${Math.max(14, width * 0.26)}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, 0, 5);
+  }
+  ctx.restore();
+}
+
+function roundRect(context, x, y, width, height, radius) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.arcTo(x + width, y, x + width, y + height, radius);
+  context.arcTo(x + width, y + height, x, y + height, radius);
+  context.arcTo(x, y + height, x, y, radius);
+  context.arcTo(x, y, x + width, y, radius);
+  context.closePath();
+}
+
 function physicalDamage(raw, armor) {
   return Math.round(raw * (100 / (100 + Math.max(0, armor))));
 }
@@ -307,10 +349,8 @@ function drawJungleActors(width, height) {
       return [Math.cos(angle) * 24, Math.sin(angle) * 18, index === 0 ? radius : radius * 0.62];
     });
     offsets.forEach(([ox, oy, unitRadius], index) => {
-      drawAssetCircle(assets[camp.id], camp.x + ox, camp.y + oy, unitRadius, camp.color, camp.name[0]);
-      ctx.beginPath();
-      ctx.arc(camp.x + ox, camp.y + oy, unitRadius, 0, Math.PI * 2);
-      ctx.stroke();
+      drawAssetBillboard(assets[camp.id], camp.x + ox, camp.y + oy, unitRadius * 1.75, unitRadius * 2.15, camp.color, camp.name[0]);
+      ctx.strokeRect(camp.x + ox - unitRadius * 0.9, camp.y + oy - unitRadius * 1.1, unitRadius * 1.8, unitRadius * 2.2);
     });
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
     ctx.fillRect(camp.x - 44, camp.y - 52, 88, 9);
@@ -329,10 +369,8 @@ function drawJungleActors(width, height) {
   ctx.stroke();
   ctx.strokeStyle = '#9ef7ff';
   ctx.lineWidth = 5;
-  drawAssetCircle(assets.yi, player.x, player.y, 28, '#f6d365', 'Yi');
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, 28, 0, Math.PI * 2);
-  ctx.stroke();
+  drawAssetBillboard(assets.yi, player.x, player.y, 58, 76, '#f6d365', 'Yi');
+  ctx.strokeRect(player.x - 29, player.y - 38, 58, 76);
   ctx.fillStyle = 'rgba(0,0,0,0.65)';
   ctx.fillRect(player.x - 44, player.y - 44, 88, 8);
   ctx.fillStyle = '#22c55e';
@@ -343,6 +381,33 @@ function drawJungleActors(width, height) {
 window.addEventListener('resize', sizeCanvas);
 sizeCanvas();
 drawGame();
+
+
+const ABILITY_SLOTS = [
+  { key: 'Q', name: 'Alpha Strike', image: 'q', cooldown: () => player.qCooldown, max: 4.2 },
+  { key: 'W', name: 'Meditate Reset', image: 'w', cooldown: () => player.wCooldown, max: 7 },
+  { key: 'E', name: 'Wuju Style', image: 'e', cooldown: () => player.eTimer > 0 ? 0 : 0, max: 5 },
+  { key: 'D', name: 'Smite', image: 'smite', cooldown: () => player.smiteCooldown, max: 15 },
+];
+
+function renderAbilityBar() {
+  const bar = $('abilityBar');
+  if (!bar || state.mode !== 'jungle') {
+    if (bar) bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  bar.innerHTML = ABILITY_SLOTS.map((slot) => {
+    const cd = slot.cooldown();
+    const pct = slot.max ? clamp(cd / slot.max, 0, 1) : 0;
+    const active = slot.key === 'E' && player.eTimer > 0;
+    return `<div class="ability ${cd > 0 ? 'cooling' : ''} ${active ? 'active' : ''}">
+      <img src="${assets[slot.image].src}" alt="${slot.name}" />
+      <b>${slot.key}</b><span>${slot.name}</span>
+      <em style="--cooldown:${pct}">${cd > 0 ? cd.toFixed(1) : active ? 'ON' : 'Ready'}</em>
+    </div>`;
+  }).join('');
+}
 
 const player = { x: 190, y: 310, tx: 190, ty: 310, hp: 760, maxHp: 760, ad: 65, bonusTrueDamage: 0, attackCooldown: 0, qCooldown: 0, wCooldown: 0, eTimer: 0, smiteCooldown: 0 };
 const jungle = {
@@ -365,6 +430,7 @@ function setMode(mode) {
   $('keyHint').innerHTML = mode === 'jungle'
     ? '🧭 Right click move · <kbd>A</kbd> + click camps · <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd>/<kbd>D</kbd> clear'
     : `🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">${state.champion.key}</kbd> reset`;
+  renderAbilityBar();
 }
 
 document.addEventListener('click', (event) => {
@@ -482,6 +548,7 @@ function updateJungle(dt) {
     damageCamp(camp, physicalDamage(player.ad, camp.armor) + (player.eTimer > 0 ? player.bonusTrueDamage : 0), 'hit');
     player.hp = Math.max(0, player.hp - camp.damage * 0.18);
   }
+  renderAbilityBar();
   jungle.camps.forEach((camp) => {
     if (camp.hp === 0 && performance.now() - camp.deadAt > camp.respawn * 1000) camp.hp = camp.maxHp;
   });
@@ -501,4 +568,5 @@ function resetJungle() {
   player.smiteCooldown = 0;
   jungle.selectedCamp = null;
   jungle.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.deadAt = 0; });
+  renderAbilityBar();
 }
