@@ -3,91 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Practice browser-based League-style auto attack reset timing with A-click support and champion drills." />
-    <title>Auto Reset Trainer</title>
+    <meta name="description" content="A Three.js browser game for practicing Master Yi jungle clears and auto attack resets." />
+    <title>Auto Reset Trainer 3D</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <main class="app" id="app">
-      <section class="hero-panel">
+    <main class="game-shell">
+      <section class="top-hud">
         <div>
-          <div class="eyebrow">✦ Browser mechanics lab</div>
-          <h1>Auto Reset Trainer</h1>
-          <p>Practice League-style auto attack resets on a target dummy with mouse clicks, attack-move <kbd>A</kbd> + click, and champion-specific reset keys.</p>
+          <p class="eyebrow">Three.js mechanics lab</p>
+          <h1>Master Yi Jungle Reset Trainer</h1>
         </div>
-        <div class="hero-card">
-          <div class="icon">🏆</div>
-          <span id="accuracy">0% accuracy</span>
-          <small id="accuracyDetail">0/0 perfect resets</small>
+        <div class="run-stats">
+          <div><span>Clear Time</span><strong id="clearTime">0:00</strong></div>
+          <div><span>Camps</span><strong id="campScore">0 / 6</strong></div>
+          <div><span>DPS</span><strong id="dpsText">0</strong></div>
         </div>
       </section>
 
-      <section class="layout">
-        <aside class="control-panel glass">
-          <h2>🏋️ Champion Drill</h2>
-          <div class="champion-grid" id="championGrid"></div>
-          <div class="instructions">
-            <h3>How to train</h3>
-            <ol>
-              <li>Click the dummy, or press <kbd>A</kbd> then click the arena.</li>
-              <li>Watch for the hit spark and damage number.</li>
-              <li>Press <kbd id="resetKeyInline">W</kbd> inside the glowing reset window.</li>
-            </ol>
-            <p id="championHint"></p>
-          </div>
-          <div class="mode-toggle" role="group" aria-label="Training mode">
-            <button class="mode-button active" data-mode="reset">Reset trainer</button>
-            <button class="mode-button" data-mode="jungle">Jungle clear</button>
-          </div>
-          <button class="reset-button" id="resetButton">↻ Reset session</button>
-        </aside>
-
-        <section class="arena-wrap glass">
-          <div class="hud">
-            <div class="status ready" id="status">Ready</div>
-            <div class="key-hint" id="keyHint">🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">W</kbd> reset</div>
-          </div>
-
-          <div class="arena" id="arena">
-            <canvas class="game-canvas" id="gameCanvas" aria-hidden="true"></canvas>
-            <div class="lane-lines"></div>
-            <div class="champion-avatar idle" id="championAvatar">
-              <div class="blade"></div>
-              <div class="avatar-icon">⚔️</div>
-              <span id="avatarName">Master Yi</span>
-            </div>
-            <button data-dummy class="dummy idle" id="dummy" aria-label="Practice dummy">
-              <div class="dummy-health"><span id="healthBar"></span></div>
-              <div class="dummy-icon">◎</div>
-              <strong>Practice Dummy</strong>
-              <small id="damageText">0 damage dealt</small>
-            </button>
-            <div class="attack-move-ring hidden" id="attackMoveRing">Attack move primed — click to fire</div>
-            <div class="jungle-overlay hidden" id="jungleOverlay">Right click to move · A-click monsters · W reset · Q Alpha Strike · E Wuju · D Smite</div>
-            <div class="ability-bar hidden" id="abilityBar" aria-label="Ability cooldowns"></div>
-          </div>
-
-          <div class="timing-bar">
-            <div class="bar-track">
-              <div class="windup-zone"></div>
-              <div class="reset-zone"></div>
-              <span class="bar-fill" id="barFill"></span>
-            </div>
-            <div class="bar-labels"><span>Windup</span><span id="resetWindowLabel">Reset window: 240 ms</span></div>
-          </div>
-        </section>
-
-        <aside class="stats-panel glass">
-          <h2>Session stats</h2>
-          <div class="stat"><span>Attempts</span><strong id="attempts">0</strong></div>
-          <div class="stat"><span>Perfects</span><strong id="perfects">0</strong></div>
-          <div class="stat"><span>Current streak</span><strong id="streak">0</strong></div>
-          <div class="stat"><span>Best streak</span><strong id="bestStreak">0</strong></div>
-          <div class="stat"><span>Last timing</span><strong id="lastTiming">—</strong></div>
-          <div class="coach-note"><strong>Coach note</strong><p>Negative timing means you pressed before the hit. Aim for 40–180 ms after impact for a clean reset.</p></div>
-        </aside>
+      <section class="game-frame">
+        <div id="game" class="game-viewport" aria-label="3D jungle training game"></div>
+        <div class="floating-help">
+          <strong>Controls</strong>
+          <span>Right click ground to move</span>
+          <span>Left click camp to target</span>
+          <span><kbd>A</kbd> attack-move · <kbd>Q</kbd> Alpha · <kbd>W</kbd> Meditate reset · <kbd>E</kbd> Wuju · <kbd>D</kbd> Smite</span>
+        </div>
+        <div class="target-card" id="targetCard">
+          <span>No target</span>
+          <strong>Click a jungle camp</strong>
+          <div class="target-health"><i></i></div>
+        </div>
+        <div class="combat-log" id="combatLog"></div>
+        <div class="ability-bar" id="abilityBar"></div>
+        <div class="minimap" id="minimap"></div>
       </section>
-          <p class="riot-notice">Auto Reset Trainer is a non-commercial fan project. Riot Games does not endorse or sponsor this project.</p>
+
+      <footer class="riot-notice">Auto Reset Trainer is a non-commercial fan project. Riot Games does not endorse or sponsor this project.</footer>
     </main>
     <script type="module" src="/src/main.js"></script>
   </body>

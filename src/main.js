@@ -1,17 +1,8 @@
-const CHAMPIONS = [
-  { id: 'master-yi', name: 'Master Yi', ability: 'Meditate reset', key: 'W', autoMs: 650, resetWindowMs: 240, color: '#f6d365', accent: '#9ef7ff', hint: 'Auto attack, then tap W/Meditate right as the sword spark lands to cancel downtime and restart your swing.' },
-  { id: 'nasus', name: 'Nasus', ability: 'Siphoning Strike', key: 'Q', autoMs: 720, resetWindowMs: 260, color: '#b48cff', accent: '#ffe8a3', hint: 'Use Q immediately after the hit confirms to cancel downtime and chain the empowered attack.' },
-  { id: 'jax', name: 'Jax', ability: 'Empower', key: 'W', autoMs: 690, resetWindowMs: 250, color: '#c084fc', accent: '#7dd3fc', hint: 'Strike first, then W during the reset timing window to keep pressure without wasted backswing.' },
-  { id: 'renekton', name: 'Renekton', ability: 'Ruthless Predator', key: 'W', autoMs: 710, resetWindowMs: 250, color: '#fb923c', accent: '#fde68a', hint: 'Click the dummy, wait for impact, and buffer W just after damage appears.' },
-];
-
-const RESULTS = {
-  idle: ['Ready', 'ready'], early: ['Too Early', 'early'], perfect: ['Perfect Reset', 'perfect'], late: ['Too Late', 'late'], missed: ['Missed Reset', 'missed'],
-};
+import * as THREE from 'https://esm.sh/three@0.160.0';
 
 const RIOT_ASSET_BASE = 'https://ddragon.leagueoflegends.com/cdn/15.24.1/img';
 const CDRAGON_CHARACTER_BASE = 'https://raw.communitydragon.org/latest/game/assets/characters';
-const ASSET_URLS = {
+const ASSETS = {
   yi: `${RIOT_ASSET_BASE}/champion/MasterYi.png`,
   q: `${RIOT_ASSET_BASE}/spell/AlphaStrike.png`,
   w: `${RIOT_ASSET_BASE}/spell/Meditate.png`,
@@ -24,549 +15,363 @@ const ASSET_URLS = {
   red: `${CDRAGON_CHARACTER_BASE}/sru_red/hud/redbrambleback_square.png`,
   krugs: `${CDRAGON_CHARACTER_BASE}/sru_krug/hud/krug_square.png`,
 };
-const assets = Object.fromEntries(Object.entries(ASSET_URLS).map(([key, src]) => {
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = src;
-  return [key, image];
-}));
 
-function drawAssetCircle(image, x, y, radius, fallbackColor, label) {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x, y, radius, 0, Math.PI * 2);
-  ctx.clip();
-  if (image?.complete && image.naturalWidth) {
-    ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
-  } else {
-    ctx.fillStyle = fallbackColor;
-    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
-    ctx.fillStyle = '#fff';
-    ctx.font = `900 ${Math.max(11, radius * 0.42)}px system-ui`;
-    ctx.textAlign = 'center';
-    ctx.fillText(label, x, y + 4);
-  }
-  ctx.restore();
+const CAMP_DATA = [
+  { id: 'blue', name: 'Blue Sentinel', position: [13, 0, -8], maxHp: 2300, damage: 66, armor: 42, respawn: 300, units: 1, color: 0x4aa3ff, radius: 1.35 },
+  { id: 'gromp', name: 'Gromp', position: [18, 0, -1], maxHp: 2050, damage: 70, armor: 20, respawn: 135, units: 1, color: 0x34d399, radius: 1.2 },
+  { id: 'wolves', name: 'Murk Wolves', position: [9, 0, 4], maxHp: 1650, damage: 42, armor: 20, respawn: 135, units: 3, color: 0x94a3b8, radius: 0.92 },
+  { id: 'raptors', name: 'Raptors', position: [-4, 0, 1], maxHp: 1400, damage: 38, armor: 20, respawn: 135, units: 6, color: 0xf97316, radius: 0.78 },
+  { id: 'red', name: 'Red Brambleback', position: [-11, 0, 9], maxHp: 2300, damage: 66, armor: 42, respawn: 300, units: 1, color: 0xef4444, radius: 1.35 },
+  { id: 'krugs', name: 'Krugs', position: [-18, 0, -4], maxHp: 1900, damage: 55, armor: 20, respawn: 135, units: 2, color: 0xa16207, radius: 1.05 },
+];
+
+const SPELLS = [
+  { key: 'Q', id: 'q', name: 'Alpha Strike', cooldown: 4.2, cast: castQ },
+  { key: 'W', id: 'w', name: 'Meditate Reset', cooldown: 7, cast: castW },
+  { key: 'E', id: 'e', name: 'Wuju Style', cooldown: 8, cast: castE },
+  { key: 'D', id: 'smite', name: 'Smite', cooldown: 15, cast: castSmite },
+];
+
+const el = (id) => document.getElementById(id);
+const viewport = el('game');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07111f);
+scene.fog = new THREE.Fog(0x07111f, 30, 78);
+
+const camera = new THREE.OrthographicCamera(-18, 18, 10, -10, 0.1, 200);
+camera.position.set(18, 20, 18);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewport.append(renderer.domElement);
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const clock = new THREE.Clock();
+const textureLoader = new THREE.TextureLoader();
+textureLoader.setCrossOrigin('anonymous');
+const textures = Object.fromEntries(Object.entries(ASSETS).map(([key, src]) => [key, textureLoader.load(src)]));
+
+const state = {
+  startedAt: performance.now(), totalDamage: 0, selectedCamp: null, attackMove: false, cleared: 0,
+  player: { hp: 760, maxHp: 760, ad: 65, x: 0, z: 0, targetX: 0, targetZ: 0, attackTimer: 0, attackSpeed: 0.68, eActive: 0 },
+  cooldowns: { Q: 0, W: 0, E: 0, D: 0 },
+};
+
+const audio = { ctx: null };
+function tone(kind = 'hit') {
+  audio.ctx ||= new AudioContext();
+  const now = audio.ctx.currentTime;
+  const osc = audio.ctx.createOscillator();
+  const gain = audio.ctx.createGain();
+  osc.type = kind === 'spell' ? 'sawtooth' : 'triangle';
+  osc.frequency.value = kind === 'crit' ? 520 : kind === 'spell' ? 760 : 240;
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+  osc.connect(gain).connect(audio.ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.18);
 }
 
-function drawAssetBillboard(image, x, y, width, height, fallbackColor, label) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.fillStyle = 'rgba(0,0,0,0.36)';
-  ctx.beginPath();
-  ctx.ellipse(0, height * 0.46, width * 0.55, height * 0.16, 0, 0, Math.PI * 2);
-  ctx.fill();
-  const gradient = ctx.createLinearGradient(0, -height / 2, 0, height / 2);
-  gradient.addColorStop(0, 'rgba(255,255,255,0.28)');
-  gradient.addColorStop(0.18, fallbackColor);
-  gradient.addColorStop(1, 'rgba(0,0,0,0.72)');
-  ctx.fillStyle = gradient;
-  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-  ctx.lineWidth = 3;
-  roundRect(ctx, -width / 2, -height / 2, width, height, 13);
-  ctx.fill();
-  ctx.stroke();
-  if (image?.complete && image.naturalWidth) {
-    ctx.save();
-    roundRect(ctx, -width / 2 + 4, -height / 2 + 4, width - 8, height - 8, 10);
-    ctx.clip();
-    ctx.drawImage(image, -width / 2 + 4, -height / 2 + 4, width - 8, height - 8);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = '#fff';
-    ctx.font = `900 ${Math.max(14, width * 0.26)}px system-ui`;
-    ctx.textAlign = 'center';
-    ctx.fillText(label, 0, 5);
+function createWorld() {
+  scene.add(new THREE.HemisphereLight(0xbfe7ff, 0x0b2f1f, 2.2));
+  const sun = new THREE.DirectionalLight(0xfff4d6, 2.6);
+  sun.position.set(-16, 28, 12);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  scene.add(sun);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(52, 34, 18, 12),
+    new THREE.MeshStandardMaterial({ color: 0x1f5f3b, roughness: 0.95, metalness: 0.02 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  ground.name = 'ground';
+  scene.add(ground);
+
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(56, 5), new THREE.MeshStandardMaterial({ color: 0x1d4f69, roughness: 0.6 }));
+  river.rotation.x = -Math.PI / 2;
+  river.rotation.z = -0.38;
+  river.position.y = 0.012;
+  scene.add(river);
+
+  for (let i = 0; i < 46; i += 1) {
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 0.9, 7), new THREE.MeshStandardMaterial({ color: 0x4b2d17 }));
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.72 + Math.random() * 0.35, 1.8 + Math.random(), 8), new THREE.MeshStandardMaterial({ color: [0x0f4d2d, 0x166534, 0x14532d][i % 3] }));
+    leaves.position.y = 1.18;
+    trunk.castShadow = leaves.castShadow = true;
+    tree.add(trunk, leaves);
+    const side = i % 4;
+    tree.position.set(side < 2 ? -24 + Math.random() * 48 : (side === 2 ? -25 : 25), 0.45, side < 2 ? (side === 0 ? -15 : 15) : -15 + Math.random() * 30);
+    scene.add(tree);
   }
-  ctx.restore();
 }
 
-function roundRect(context, x, y, width, height, radius) {
-  context.beginPath();
-  context.moveTo(x + radius, y);
-  context.arcTo(x + width, y, x + width, y + height, radius);
-  context.arcTo(x + width, y + height, x, y + height, radius);
-  context.arcTo(x, y + height, x, y, radius);
-  context.arcTo(x, y, x + width, y, radius);
-  context.closePath();
+function makeSprite(texture, scale = 2.2) {
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(scale, scale, 1);
+  sprite.position.y = scale * 0.56;
+  return sprite;
+}
+
+function createChampion() {
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 1.15, 6, 12), new THREE.MeshStandardMaterial({ color: 0xf6d365, roughness: 0.42, metalness: 0.25 }));
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 1.8), new THREE.MeshStandardMaterial({ color: 0x9ef7ff, emissive: 0x16677a, emissiveIntensity: 0.6 }));
+  blade.position.set(0.72, 0.9, 0.18);
+  blade.rotation.z = -0.7;
+  body.castShadow = blade.castShadow = true;
+  group.add(body, blade, makeSprite(textures.yi, 1.45));
+  group.position.set(0, 0.8, 0);
+  scene.add(group);
+  return group;
+}
+
+function createCamp(data) {
+  const group = new THREE.Group();
+  const offsets = data.units === 1 ? [[0, 0, data.radius]] : Array.from({ length: data.units }, (_, i) => {
+    const a = (i / data.units) * Math.PI * 2;
+    return [Math.cos(a) * 1.15, Math.sin(a) * 0.92, i === 0 ? data.radius : data.radius * 0.72];
+  });
+  offsets.forEach(([x, z, radius]) => {
+    const monster = new THREE.Mesh(
+      new THREE.CapsuleGeometry(radius * 0.52, radius * 0.95, 6, 12),
+      new THREE.MeshStandardMaterial({ color: data.color, roughness: 0.58, metalness: 0.08 })
+    );
+    monster.position.set(x, radius * 0.72, z);
+    monster.castShadow = true;
+    const sprite = makeSprite(textures[data.id], radius * 1.6);
+    sprite.position.set(x, radius * 1.55, z + 0.06);
+    group.add(monster, sprite);
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(data.radius * 1.05, 0.035, 8, 40), new THREE.MeshBasicMaterial({ color: 0xfef08a, transparent: true, opacity: 0 }));
+  ring.rotation.x = Math.PI / 2;
+  ring.name = 'selectionRing';
+  group.add(ring);
+  group.position.set(...data.position);
+  group.userData.camp = { ...data, hp: data.maxHp, clearedAt: 0, group, ring };
+  scene.add(group);
+  return group.userData.camp;
+}
+
+createWorld();
+const champion = createChampion();
+const camps = CAMP_DATA.map(createCamp);
+const ground = scene.getObjectByName('ground');
+
+function resize() {
+  const rect = viewport.getBoundingClientRect();
+  renderer.setSize(rect.width, rect.height, false);
+  const aspect = rect.width / rect.height;
+  camera.left = -16 * aspect;
+  camera.right = 16 * aspect;
+  camera.top = 16;
+  camera.bottom = -16;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+function screenPick(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(scene.children, true);
+}
+
+viewport.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  const hit = screenPick(event).find((item) => item.object === ground);
+  if (!hit) return;
+  moveTo(hit.point.x, hit.point.z);
+});
+
+viewport.addEventListener('pointerdown', (event) => {
+  const hits = screenPick(event);
+  const campHit = hits.map((hit) => findCampFromObject(hit.object)).find(Boolean);
+  if (campHit) {
+    state.selectedCamp = campHit;
+    moveTo(campHit.group.position.x - 2.15, campHit.group.position.z);
+    log(`Targeting ${campHit.name}`);
+  } else if (state.attackMove) {
+    const groundHit = hits.find((hit) => hit.object === ground);
+    if (groundHit) {
+      state.selectedCamp = nearestCamp(groundHit.point.x, groundHit.point.z);
+      moveTo(groundHit.point.x, groundHit.point.z);
+    }
+  }
+  state.attackMove = false;
+});
+
+window.addEventListener('keydown', (event) => {
+  const key = event.key.toUpperCase();
+  if (key === 'A') {
+    state.attackMove = true;
+    log('Attack-move primed');
+    return;
+  }
+  const spell = SPELLS.find((item) => item.key === key);
+  if (spell) {
+    event.preventDefault();
+    if (state.cooldowns[key] <= 0) spell.cast();
+  }
+});
+
+function findCampFromObject(object) {
+  let current = object;
+  while (current) {
+    if (current.userData?.camp) return current.userData.camp;
+    current = current.parent;
+  }
+  return null;
+}
+
+function moveTo(x, z) {
+  state.player.targetX = THREE.MathUtils.clamp(x, -23, 23);
+  state.player.targetZ = THREE.MathUtils.clamp(z, -15, 15);
+}
+
+function nearestCamp(x = state.player.x, z = state.player.z) {
+  return camps.filter((camp) => camp.hp > 0).sort((a, b) => distance2(a, x, z) - distance2(b, x, z))[0] || null;
+}
+
+function distance2(camp, x, z) {
+  return (camp.group.position.x - x) ** 2 + (camp.group.position.z - z) ** 2;
 }
 
 function physicalDamage(raw, armor) {
   return Math.round(raw * (100 / (100 + Math.max(0, armor))));
 }
 
-const $ = (id) => document.getElementById(id);
-const state = { mode: 'reset', champion: CHAMPIONS[0], phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, timers: [], activeAttempt: false, impactAt: 0, resetOpenAt: 0, resetCloseAt: 0 };
-
-function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
-function formatMs(value) { return value === null || Number.isNaN(value) ? '—' : `${Math.round(value)} ms`; }
-function schedule(fn, ms) { const timer = setTimeout(fn, ms); state.timers.push(timer); }
-function clearTimers() { state.timers.forEach(clearTimeout); state.timers = []; }
-
-function renderChampionButtons() {
-  $('championGrid').innerHTML = CHAMPIONS.map((champion) => `
-    <button class="champion ${state.champion.id === champion.id ? 'active' : ''}" data-champion="${champion.id}">
-      <strong>${champion.name}</strong><span>${champion.key} · ${champion.ability}</span>
-    </button>`).join('');
-}
-
-function render() {
-  document.documentElement.style.setProperty('--champion', state.champion.color);
-  document.documentElement.style.setProperty('--accent', state.champion.accent);
-  renderChampionButtons();
-  $('resetKeyInline').textContent = state.champion.key;
-  if ($('resetKeyHud')) $('resetKeyHud').textContent = state.champion.key;
-  $('championHint').textContent = state.champion.hint;
-  $('avatarName').textContent = state.champion.name;
-  $('resetWindowLabel').textContent = `Reset window: ${state.champion.resetWindowMs} ms`;
-  $('attempts').textContent = state.attempts;
-  $('perfects').textContent = state.perfects;
-  $('streak').textContent = state.streak;
-  $('bestStreak').textContent = state.bestStreak;
-  $('lastTiming').textContent = formatMs(state.lastTiming);
-  $('damageText').textContent = `${state.damage} damage dealt`;
-  $('healthBar').style.width = `${clamp(100 - state.damage / 18, 8, 100)}%`;
-  const accuracy = state.attempts ? Math.round((state.perfects / state.attempts) * 100) : 0;
-  $('accuracy').textContent = `${accuracy}% accuracy`;
-  $('accuracyDetail').textContent = `${state.perfects}/${state.attempts} perfect resets`;
-  $('arena').classList.toggle('primed', state.attackMovePrimed);
-  $('attackMoveRing').classList.toggle('hidden', !state.attackMovePrimed);
-}
-
-function setPhase(phase) {
-  state.phase = phase;
-  $('championAvatar').className = `champion-avatar ${phase}`;
-  $('dummy').className = `dummy ${phase}`;
-  $('barFill').style.width = phase === 'windup' ? '48%' : phase === 'impact' ? '100%' : '0%';
-}
-
-function setResult(result) {
-  const [label, className] = RESULTS[result];
-  $('status').textContent = label;
-  $('status').className = `status ${className}`;
-}
-
-const audio = { ctx: null };
-function playTone(kind = 'hit') {
-  audio.ctx ||= new AudioContext();
-  const now = audio.ctx.currentTime;
-  const osc = audio.ctx.createOscillator();
-  const gain = audio.ctx.createGain();
-  const frequencies = { hit: 230, perfect: 520, early: 130, spell: 740 };
-  osc.type = kind === 'spell' ? 'sawtooth' : 'triangle';
-  osc.frequency.setValueAtTime(frequencies[kind] || 260, now);
-  osc.frequency.exponentialRampToValueAtTime((frequencies[kind] || 260) * 0.55, now + 0.16);
-  gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.09, now + 0.015);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
-  osc.connect(gain).connect(audio.ctx.destination);
-  osc.start(now);
-  osc.stop(now + 0.19);
-}
-
-function burst(kind) {
-  const spark = document.createElement('div');
-  spark.className = `spark ${kind}`;
-  spark.textContent = '⚡';
-  $('arena').append(spark);
-  playTone(kind);
-  schedule(() => spark.remove(), 900);
-}
-
-function completeAttempt(outcome, timing) {
-  state.activeAttempt = false;
-  state.attempts += 1;
-  state.lastTiming = timing;
-  setResult(outcome);
-  setPhase('recovery');
-  if (outcome === 'perfect') {
-    state.perfects += 1;
-    state.streak += 1;
-    state.bestStreak = Math.max(state.bestStreak, state.streak);
-    state.damage += 92;
-    burst('perfect');
-  } else {
-    state.streak = 0;
-    if (outcome === 'early') burst('early');
+function damageCamp(camp, amount, source = 'Hit') {
+  if (!camp || camp.hp <= 0) return;
+  camp.hp = Math.max(0, camp.hp - amount);
+  state.totalDamage += amount;
+  tone(source === 'Smite' || source === 'Alpha Strike' ? 'spell' : 'hit');
+  log(`${source}: ${amount} to ${camp.name}`);
+  if (camp.hp === 0) {
+    camp.clearedAt = performance.now();
+    state.cleared += 1;
+    camp.group.visible = false;
+    log(`${camp.name} cleared`);
+    state.selectedCamp = nearestCamp();
   }
-  render();
-  schedule(() => { setPhase('idle'); setResult('idle'); }, 720);
 }
 
-function beginAttack() {
-  if (state.phase !== 'idle' && state.phase !== 'recovery') return;
-  clearTimers();
-  const now = performance.now();
-  state.activeAttempt = true;
-  state.impactAt = now + state.champion.autoMs * 0.48;
-  state.resetOpenAt = state.impactAt;
-  state.resetCloseAt = state.impactAt + state.champion.resetWindowMs;
-  state.lastTiming = null;
-  state.attackMovePrimed = false;
-  setPhase('windup');
-  setResult('idle');
-  render();
-
-  schedule(() => { setPhase('impact'); state.damage += 64; burst('hit'); render(); }, state.champion.autoMs * 0.48);
-  schedule(() => { if (state.activeAttempt) completeAttempt('missed', null); }, state.champion.autoMs * 0.48 + state.champion.resetWindowMs);
+function castQ() {
+  const camp = state.selectedCamp || nearestCamp();
+  if (!camp) return;
+  champion.position.set(camp.group.position.x - 1.2, 0.8, camp.group.position.z);
+  state.player.x = champion.position.x;
+  state.player.z = champion.position.z;
+  state.player.targetX = state.player.x;
+  state.player.targetZ = state.player.z;
+  state.cooldowns.Q = 4.2;
+  damageCamp(camp, physicalDamage(155 + state.player.ad, camp.armor), 'Alpha Strike');
 }
 
-function triggerReset() {
-  if (!state.activeAttempt) return;
-  const now = performance.now();
-  const timing = now - state.resetOpenAt;
-  clearTimers();
-  if (now < state.resetOpenAt) completeAttempt('early', timing);
-  else if (now <= state.resetCloseAt) completeAttempt('perfect', timing);
-  else completeAttempt('late', timing);
+function castW() {
+  state.cooldowns.W = 7;
+  state.player.hp = Math.min(state.player.maxHp, state.player.hp + 95);
+  state.player.attackTimer = 0;
+  tone('spell');
+  log('Meditate reset: attack timer refreshed');
 }
 
-function resetStats() {
-  clearTimers();
-  Object.assign(state, { phase: 'idle', attackMovePrimed: false, attempts: 0, perfects: 0, streak: 0, bestStreak: 0, damage: 0, lastTiming: null, activeAttempt: false });
-  if (typeof resetJungle === 'function') resetJungle();
-  document.querySelectorAll('.spark').forEach((spark) => spark.remove());
-  setPhase('idle');
-  setResult('idle');
-  render();
+function castE() {
+  state.cooldowns.E = 8;
+  state.player.eActive = 5;
+  tone('spell');
+  log('Wuju Style active: autos deal bonus true damage');
 }
 
-$('arena').addEventListener('click', (event) => {
-  if (state.mode !== 'reset') return;
-  if (event.target.closest('[data-dummy]') || state.attackMovePrimed) beginAttack();
-});
-
-document.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-champion]');
-  if (!button) return;
-  state.champion = CHAMPIONS.find((champion) => champion.id === button.dataset.champion);
-  resetStats();
-});
-
-$('resetButton').addEventListener('click', resetStats);
-
-window.addEventListener('keydown', (event) => {
-  const key = event.key.toLowerCase();
-  if (key === 'a') { event.preventDefault(); state.attackMovePrimed = true; render(); }
-  if (key === state.champion.key.toLowerCase()) { event.preventDefault(); triggerReset(); }
-  if (key === 'escape') { state.attackMovePrimed = false; render(); }
-});
-
-render();
-
-const canvas = $('gameCanvas');
-const ctx = canvas.getContext('2d');
-const world = {
-  minions: Array.from({ length: 8 }, (_, index) => ({ lane: index % 2, offset: index * 95, bob: Math.random() * Math.PI * 2 })),
-  particles: Array.from({ length: 36 }, () => ({ x: Math.random(), y: Math.random(), size: 1 + Math.random() * 2, speed: 0.15 + Math.random() * 0.45 })),
-};
-
-function sizeCanvas() {
-  const rect = canvas.getBoundingClientRect();
-  const ratio = window.devicePixelRatio || 1;
-  canvas.width = Math.max(1, Math.floor(rect.width * ratio));
-  canvas.height = Math.max(1, Math.floor(rect.height * ratio));
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+function castSmite() {
+  const camp = state.selectedCamp || nearestCamp();
+  if (!camp || distance2(camp, state.player.x, state.player.z) > 18) return;
+  state.cooldowns.D = 15;
+  damageCamp(camp, 600, 'Smite');
 }
 
-let lastFrame = performance.now();
-function drawGame(time = 0) {
-  const dt = Math.min(0.05, (time - lastFrame) / 1000 || 0);
-  lastFrame = time;
-  updateJungle(dt);
-  const { width, height } = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, width, height);
+function update(dt) {
+  Object.keys(state.cooldowns).forEach((key) => { state.cooldowns[key] = Math.max(0, state.cooldowns[key] - dt); });
+  state.player.eActive = Math.max(0, state.player.eActive - dt);
+  state.player.attackTimer = Math.max(0, state.player.attackTimer - dt);
 
-  const gradient = ctx.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, '#143b46');
-  gradient.addColorStop(0.42, '#1f3c2f');
-  gradient.addColorStop(1, '#172554');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
+  const dx = state.player.targetX - state.player.x;
+  const dz = state.player.targetZ - state.player.z;
+  const distance = Math.hypot(dx, dz);
+  const speed = state.player.eActive > 0 ? 7.1 : 6.2;
+  if (distance > 0.05) {
+    const step = Math.min(distance, speed * dt);
+    state.player.x += (dx / distance) * step;
+    state.player.z += (dz / distance) * step;
+  }
+  champion.position.x = state.player.x;
+  champion.position.z = state.player.z;
+  champion.rotation.y = Math.atan2(dx, dz);
 
-  ctx.save();
-  ctx.translate(width / 2, height / 2);
-  ctx.rotate(-0.18);
-  ctx.fillStyle = 'rgba(88, 166, 114, 0.32)';
-  ctx.fillRect(-width, -56, width * 2, 112);
-  ctx.strokeStyle = 'rgba(234, 221, 173, 0.52)';
-  ctx.lineWidth = 4;
-  ctx.setLineDash([24, 18]);
-  ctx.beginPath();
-  ctx.moveTo(-width, 0);
-  ctx.lineTo(width, 0);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-
-  ctx.fillStyle = 'rgba(18, 83, 70, 0.38)';
-  for (let i = 0; i < 14; i += 1) {
-    const x = ((i * 137 + time * 0.012) % (width + 160)) - 80;
-    const y = 54 + (i % 4) * (height / 4.8);
-    ctx.beginPath();
-    ctx.ellipse(x, y, 46, 19, -0.4, 0, Math.PI * 2);
-    ctx.fill();
+  const camp = state.selectedCamp || nearestCamp();
+  if (camp && camp.hp > 0 && distance2(camp, state.player.x, state.player.z) < 7.5 && state.player.attackTimer <= 0) {
+    state.player.attackTimer = state.player.eActive > 0 ? 0.48 : 0.68;
+    const damage = physicalDamage(state.player.ad, camp.armor) + (state.player.eActive > 0 ? 30 : 0);
+    damageCamp(camp, damage, state.player.eActive > 0 ? 'Wuju auto' : 'Auto');
+    state.player.hp = Math.max(0, state.player.hp - camp.damage * 0.18);
   }
 
-  world.minions.forEach((minion, index) => {
-    const direction = minion.lane ? -1 : 1;
-    const x = minion.lane ? width - ((time * 0.035 + minion.offset) % (width + 120)) : ((time * 0.035 + minion.offset) % (width + 120)) - 60;
-    const y = height * 0.52 + (index % 4 - 1.5) * 20 + Math.sin(time * 0.006 + minion.bob) * 5;
-    ctx.fillStyle = minion.lane ? 'rgba(248, 113, 113, 0.88)' : 'rgba(96, 165, 250, 0.88)';
-    ctx.beginPath();
-    ctx.arc(x, y, 12, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.72)';
-    ctx.fillRect(x - 9 * direction, y - 3, 18 * direction, 6);
+  camps.forEach((camp) => {
+    camp.ring.material.opacity = state.selectedCamp === camp && camp.hp > 0 ? 0.95 : 0;
+    if (camp.hp === 0 && performance.now() - camp.clearedAt > camp.respawn * 1000) {
+      camp.hp = camp.maxHp;
+      camp.group.visible = true;
+      state.cleared = Math.max(0, state.cleared - 1);
+    }
   });
-
-  if (state.mode === 'jungle') drawJungleActors(width, height);
-
-  world.particles.forEach((particle) => {
-    particle.y += particle.speed / 1000;
-    if (particle.y > 1) particle.y = 0;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
-    ctx.beginPath();
-    ctx.arc(particle.x * width, particle.y * height, particle.size, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  requestAnimationFrame(drawGame);
 }
 
-function drawJungleActors(width, height) {
-  const scaleX = width / 960;
-  const scaleY = height / 560;
-  ctx.save();
-  ctx.scale(scaleX, scaleY);
-  jungle.camps.forEach((camp) => {
-    if (camp.hp <= 0) return;
-    ctx.strokeStyle = jungle.selectedCamp === camp ? '#fef08a' : 'rgba(255,255,255,0.45)';
-    ctx.lineWidth = 4;
-    const radius = camp.id === 'blue' || camp.id === 'red' ? 38 : 30;
-    const offsets = camp.units === 1 ? [[0, 0, radius]] : Array.from({ length: camp.units }, (_, index) => {
-      const angle = (index / camp.units) * Math.PI * 2;
-      return [Math.cos(angle) * 24, Math.sin(angle) * 18, index === 0 ? radius : radius * 0.62];
-    });
-    offsets.forEach(([ox, oy, unitRadius], index) => {
-      drawAssetBillboard(assets[camp.id], camp.x + ox, camp.y + oy, unitRadius * 1.75, unitRadius * 2.15, camp.color, camp.name[0]);
-      ctx.strokeRect(camp.x + ox - unitRadius * 0.9, camp.y + oy - unitRadius * 1.1, unitRadius * 1.8, unitRadius * 2.2);
-    });
-    ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(camp.x - 44, camp.y - 52, 88, 9);
-    ctx.fillStyle = '#22c55e';
-    ctx.fillRect(camp.x - 44, camp.y - 52, 88 * (camp.hp / camp.maxHp), 9);
-    ctx.fillStyle = '#fff';
-    ctx.font = '700 12px system-ui';
-    ctx.textAlign = 'center';
-    ctx.fillText(camp.name, camp.x, camp.y + 55);
-  });
-  ctx.strokeStyle = 'rgba(158,247,255,0.42)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(player.x, player.y);
-  ctx.lineTo(player.tx, player.ty);
-  ctx.stroke();
-  ctx.strokeStyle = '#9ef7ff';
-  ctx.lineWidth = 5;
-  drawAssetBillboard(assets.yi, player.x, player.y, 58, 76, '#f6d365', 'Yi');
-  ctx.strokeRect(player.x - 29, player.y - 38, 58, 76);
-  ctx.fillStyle = 'rgba(0,0,0,0.65)';
-  ctx.fillRect(player.x - 44, player.y - 44, 88, 8);
-  ctx.fillStyle = '#22c55e';
-  ctx.fillRect(player.x - 44, player.y - 44, 88 * (player.hp / player.maxHp), 8);
-  ctx.restore();
-}
-
-window.addEventListener('resize', sizeCanvas);
-sizeCanvas();
-drawGame();
-
-
-const ABILITY_SLOTS = [
-  { key: 'Q', name: 'Alpha Strike', image: 'q', cooldown: () => player.qCooldown, max: 4.2 },
-  { key: 'W', name: 'Meditate Reset', image: 'w', cooldown: () => player.wCooldown, max: 7 },
-  { key: 'E', name: 'Wuju Style', image: 'e', cooldown: () => player.eTimer > 0 ? 0 : 0, max: 5 },
-  { key: 'D', name: 'Smite', image: 'smite', cooldown: () => player.smiteCooldown, max: 15 },
-];
-
-function renderAbilityBar() {
-  const bar = $('abilityBar');
-  if (!bar || state.mode !== 'jungle') {
-    if (bar) bar.classList.add('hidden');
-    return;
-  }
-  bar.classList.remove('hidden');
-  bar.innerHTML = ABILITY_SLOTS.map((slot) => {
-    const cd = slot.cooldown();
-    const pct = slot.max ? clamp(cd / slot.max, 0, 1) : 0;
-    const active = slot.key === 'E' && player.eTimer > 0;
+function renderHud() {
+  const elapsed = Math.floor((performance.now() - state.startedAt) / 1000);
+  el('clearTime').textContent = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
+  el('campScore').textContent = `${state.cleared} / ${camps.length}`;
+  el('dpsText').textContent = Math.round(state.totalDamage / Math.max(1, elapsed));
+  const target = state.selectedCamp;
+  el('targetCard').innerHTML = target && target.hp > 0
+    ? `<span>${target.name}</span><strong>${Math.ceil(target.hp)} / ${target.maxHp} HP</strong><div class="target-health"><i style="width:${(target.hp / target.maxHp) * 100}%"></i></div>`
+    : '<span>No target</span><strong>Click a jungle camp</strong><div class="target-health"><i style="width:0%"></i></div>';
+  el('abilityBar').innerHTML = SPELLS.map((spell) => {
+    const cd = state.cooldowns[spell.key];
+    const active = spell.key === 'E' && state.player.eActive > 0;
+    const pct = THREE.MathUtils.clamp(cd / spell.cooldown, 0, 1);
     return `<div class="ability ${cd > 0 ? 'cooling' : ''} ${active ? 'active' : ''}">
-      <img src="${assets[slot.image].src}" alt="${slot.name}" />
-      <b>${slot.key}</b><span>${slot.name}</span>
+      <img src="${ASSETS[spell.id]}" alt="${spell.name}" />
+      <b>${spell.key}</b><span>${spell.name}</span>
       <em style="--cooldown:${pct}">${cd > 0 ? cd.toFixed(1) : active ? 'ON' : 'Ready'}</em>
     </div>`;
   }).join('');
+  el('minimap').innerHTML = camps.map((camp) => `<i class="${camp.hp <= 0 ? 'dead' : ''}" style="left:${((camp.group.position.x + 24) / 48) * 100}%;top:${((camp.group.position.z + 16) / 32) * 100}%"></i>`).join('') + `<b style="left:${((state.player.x + 24) / 48) * 100}%;top:${((state.player.z + 16) / 32) * 100}%"></b>`;
 }
 
-const player = { x: 190, y: 310, tx: 190, ty: 310, hp: 760, maxHp: 760, ad: 65, bonusTrueDamage: 0, attackCooldown: 0, qCooldown: 0, wCooldown: 0, eTimer: 0, smiteCooldown: 0 };
-const jungle = {
-  modeStarted: performance.now(), selectedCamp: null,
-  camps: [
-    { id: 'blue', name: 'Blue Sentinel', x: 650, y: 170, hp: 2300, maxHp: 2300, damage: 66, armor: 42, mr: 42, respawn: 300, color: '#60a5fa', units: 1 },
-    { id: 'gromp', name: 'Gromp', x: 825, y: 300, hp: 2050, maxHp: 2050, damage: 70, armor: 20, mr: 20, respawn: 135, color: '#34d399', units: 1 },
-    { id: 'wolves', name: 'Murk Wolves', x: 565, y: 360, hp: 1650, maxHp: 1650, damage: 42, armor: 20, mr: 20, respawn: 135, color: '#94a3b8', units: 3 },
-    { id: 'raptors', name: 'Raptors', x: 360, y: 270, hp: 1400, maxHp: 1400, damage: 38, armor: 20, mr: 20, respawn: 135, color: '#f97316', units: 6 },
-    { id: 'red', name: 'Red Brambleback', x: 250, y: 440, hp: 2300, maxHp: 2300, damage: 66, armor: 42, mr: 42, respawn: 300, color: '#ef4444', units: 1 },
-    { id: 'krugs', name: 'Krugs', x: 135, y: 215, hp: 1900, maxHp: 1900, damage: 55, armor: 20, mr: 20, respawn: 135, color: '#a16207', units: 2 },
-  ],
-};
-
-function setMode(mode) {
-  state.mode = mode;
-  document.body.classList.toggle('jungle-mode', mode === 'jungle');
-  document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode));
-  $('jungleOverlay').classList.toggle('hidden', mode !== 'jungle');
-  $('keyHint').innerHTML = mode === 'jungle'
-    ? '🧭 Right click move · <kbd>A</kbd> + click camps · <kbd>Q</kbd>/<kbd>W</kbd>/<kbd>E</kbd>/<kbd>D</kbd> clear'
-    : `🖱️ Click dummy · <kbd>A</kbd> + click · <kbd id="resetKeyHud">${state.champion.key}</kbd> reset`;
-  renderAbilityBar();
+function log(message) {
+  const item = document.createElement('p');
+  item.textContent = message;
+  el('combatLog').prepend(item);
+  while (el('combatLog').children.length > 5) el('combatLog').lastElementChild.remove();
 }
 
-document.addEventListener('click', (event) => {
-  const modeButton = event.target.closest('[data-mode]');
-  if (!modeButton) return;
-  setMode(modeButton.dataset.mode);
-});
-
-$('arena').addEventListener('contextmenu', (event) => {
-  event.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  player.tx = event.clientX - rect.left;
-  player.ty = event.clientY - rect.top;
-});
-
-function campAtPoint(x, y) {
-  return jungle.camps.find((camp) => camp.hp > 0 && Math.hypot(camp.x - x, camp.y - y) < 42);
+function animate() {
+  const dt = Math.min(0.05, clock.getDelta());
+  update(dt);
+  renderHud();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
 }
 
-$('arena').addEventListener('pointerdown', (event) => {
-  if (state.mode !== 'jungle') return;
-  const rect = canvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  const camp = campAtPoint(x, y);
-  if (camp) {
-    jungle.selectedCamp = camp;
-    player.tx = camp.x - 58;
-    player.ty = camp.y;
-  } else if (state.attackMovePrimed) {
-    jungle.selectedCamp = nearestCamp(x, y);
-    player.tx = x;
-    player.ty = y;
-  }
-  state.attackMovePrimed = false;
-  render();
-});
-
-function nearestCamp(x = player.x, y = player.y) {
-  return jungle.camps.filter((camp) => camp.hp > 0).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0] || null;
-}
-
-function damageCamp(camp, amount, label = 'hit') {
-  if (!camp || camp.hp <= 0) return;
-  camp.hp = Math.max(0, camp.hp - amount);
-  state.damage += amount;
-  if (camp.hp === 0) {
-    state.perfects += 1;
-    state.streak += 1;
-    state.bestStreak = Math.max(state.bestStreak, state.streak);
-    camp.deadAt = performance.now();
-    jungle.selectedCamp = nearestCamp();
-  }
-  burst(label);
-  render();
-}
-
-function castJungleSpell(key) {
-  const camp = jungle.selectedCamp || nearestCamp();
-  const inRange = camp && Math.hypot(camp.x - player.x, camp.y - player.y) < 120;
-  if (key === 'q' && camp && player.qCooldown <= 0) {
-    player.x = camp.x - 44;
-    player.y = camp.y;
-    player.tx = player.x;
-    player.ty = player.y;
-    player.qCooldown = 4.2;
-    playTone('spell');
-    damageCamp(camp, physicalDamage(155, camp.armor) + physicalDamage(player.ad, camp.armor), 'perfect');
-  }
-  if (key === 'w' && player.wCooldown <= 0) {
-    playTone('spell');
-    player.wCooldown = 7;
-    player.hp = Math.min(player.maxHp, player.hp + 95);
-    player.attackCooldown = 0;
-    setResult('perfect');
-  }
-  if (key === 'e') { playTone('spell'); player.eTimer = 5; player.bonusTrueDamage = 30; }
-  if (key === 'd' && inRange && player.smiteCooldown <= 0) {
-    playTone('spell');
-    player.smiteCooldown = 15;
-    damageCamp(camp, 600, 'perfect');
-  }
-}
-
-window.addEventListener('keydown', (event) => {
-  if (state.mode !== 'jungle') return;
-  const key = event.key.toLowerCase();
-  if (['q', 'w', 'e', 'd'].includes(key)) {
-    event.preventDefault();
-    castJungleSpell(key);
-  }
-});
-
-function updateJungle(dt) {
-  if (state.mode !== 'jungle') return;
-  const dx = player.tx - player.x;
-  const dy = player.ty - player.y;
-  const dist = Math.hypot(dx, dy);
-  const speed = player.eTimer > 0 ? 265 : 230;
-  if (dist > 3) {
-    const step = Math.min(dist, speed * dt);
-    player.x += (dx / dist) * step;
-    player.y += (dy / dist) * step;
-  }
-  player.attackCooldown = Math.max(0, player.attackCooldown - dt);
-  player.qCooldown = Math.max(0, player.qCooldown - dt);
-  player.wCooldown = Math.max(0, player.wCooldown - dt);
-  player.smiteCooldown = Math.max(0, player.smiteCooldown - dt);
-  player.eTimer = Math.max(0, player.eTimer - dt);
-  if (player.eTimer === 0) player.bonusTrueDamage = 0;
-
-  const camp = jungle.selectedCamp || nearestCamp();
-  if (camp && camp.hp > 0 && Math.hypot(camp.x - player.x, camp.y - player.y) < 86 && player.attackCooldown <= 0) {
-    player.attackCooldown = player.eTimer > 0 ? 0.48 : 0.68;
-    damageCamp(camp, physicalDamage(player.ad, camp.armor) + (player.eTimer > 0 ? player.bonusTrueDamage : 0), 'hit');
-    player.hp = Math.max(0, player.hp - camp.damage * 0.18);
-  }
-  renderAbilityBar();
-  jungle.camps.forEach((camp) => {
-    if (camp.hp === 0 && performance.now() - camp.deadAt > camp.respawn * 1000) camp.hp = camp.maxHp;
-  });
-}
-
-function resetJungle() {
-  player.x = 190;
-  player.y = 310;
-  player.tx = 190;
-  player.ty = 310;
-  player.hp = player.maxHp;
-  player.attackCooldown = 0;
-  player.qCooldown = 0;
-  player.wCooldown = 0;
-  player.eTimer = 0;
-  player.bonusTrueDamage = 0;
-  player.smiteCooldown = 0;
-  jungle.selectedCamp = null;
-  jungle.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.deadAt = 0; });
-  renderAbilityBar();
-}
+log('Load in. Right click to path toward your first camp. W is the reset.');
+animate();
