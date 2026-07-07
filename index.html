@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A Three.js browser game for practicing Master Yi jungle clears and auto attack resets." />
+    <title>Auto Reset Trainer 3D</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <section class="top-hud">
+        <div>
+          <p class="eyebrow">Three.js mechanics lab</p>
+          <h1>Master Yi Jungle Reset Trainer</h1>
+        </div>
+        <div class="run-stats">
+          <div><span>Clear Time</span><strong id="clearTime">0:00</strong></div>
+          <div><span>Camps</span><strong id="campScore">0 / 6</strong></div>
+          <div><span>DPS</span><strong id="dpsText">0</strong></div>
+        </div>
+      </section>
+
+      <section class="game-frame">
+        <div id="game" class="game-viewport" aria-label="3D jungle training game"></div>
+        <div class="floating-help">
+          <strong>Controls</strong>
+          <span>Right click ground to move</span>
+          <span>Left click camp to target</span>
+          <span><kbd>A</kbd> attack-move · <kbd>Q</kbd> Alpha · <kbd>W</kbd> Meditate reset · <kbd>E</kbd> Wuju · <kbd>D</kbd> Smite</span>
+        </div>
+        <div class="target-card" id="targetCard">
+          <span>No target</span>
+          <strong>Click a jungle camp</strong>
+          <div class="target-health"><i></i></div>
+        </div>
+        <div class="combat-log" id="combatLog"></div>
+        <div class="ability-bar" id="abilityBar"></div>
+        <div class="minimap" id="minimap"></div>
+      </section>
+
+      <footer class="riot-notice">Auto Reset Trainer is a non-commercial fan project. Riot Games does not endorse or sponsor this project.</footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
